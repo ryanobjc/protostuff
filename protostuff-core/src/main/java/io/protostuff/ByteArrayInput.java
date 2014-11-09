@@ -44,8 +44,11 @@ public final class ByteArrayInput implements Input
 {
 
     private final byte[] buffer;
-    private int offset, limit, lastTag = 0;
-    private int packedLimit = 0;
+    private int offset;
+    private int limit;
+    private int lastTag;
+    private int lastFieldNumber;
+    private int packedLimit;
 
     /**
      * If true, the nested messages are group-encoded
@@ -131,17 +134,18 @@ public final class ByteArrayInput implements Input
         if (offset == limit)
         {
             lastTag = 0;
+            lastFieldNumber = 0;
             return 0;
         }
 
-        final int tag = readRawVarint32();
-        if (tag >>> TAG_TYPE_BITS == 0)
+        lastTag = readRawVarint32();
+        lastFieldNumber = lastTag >>> TAG_TYPE_BITS;
+        if (lastFieldNumber == 0)
         {
             // If we actually read zero, that's not a valid tag.
             throw ProtobufException.invalidTag();
         }
-        lastTag = tag;
-        return tag;
+        return lastTag;
     }
 
     /**
@@ -221,18 +225,14 @@ public final class ByteArrayInput implements Input
         if (offset == limit)
         {
             lastTag = 0;
+            lastFieldNumber = 0;
             return 0;
         }
 
         final int tag;
-        // are we reading packed field?
         if (isCurrentFieldPacked())
         {
-            if (packedLimit < offset)
-                throw ProtobufException.misreportedSize();
-
-            // Return field number while reading packed field
-            return lastTag >>> TAG_TYPE_BITS;
+            return lastFieldNumber;
         }
         else
         {
@@ -240,8 +240,8 @@ public final class ByteArrayInput implements Input
             packedLimit = 0;
         }
 
-        final int fieldNumber = tag >>> TAG_TYPE_BITS;
-        if (fieldNumber == 0)
+        lastFieldNumber = tag >>> TAG_TYPE_BITS;
+        if (lastFieldNumber == 0)
         {
             if (decodeNestedMessageAsGroup &&
                     WIRETYPE_TAIL_DELIMITER == (tag & TAG_TYPE_MASK))
@@ -261,7 +261,7 @@ public final class ByteArrayInput implements Input
         }
 
         lastTag = tag;
-        return fieldNumber;
+        return lastFieldNumber;
     }
 
     /**
